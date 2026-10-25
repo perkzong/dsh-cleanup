@@ -1,0 +1,61 @@
+{
+  "name": "@local/dsh-cleanup",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH 清理：体检、清理对话、清理孤儿附件、备份还原、对话上锁",
+  "license": "MIT",
+  "author": "DSH Cleanup contributors",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/st0pandg0/dsh-cleanup.git"
+  },
+  "homepage": "https://github.com/st0pandg0/dsh-cleanup#readme",
+  "bugs": {
+    "url": "https://github.com/st0pandg0/dsh-cleanup/issues"
+  },
+  "type": "module",
+  "main": "index.js",
+  "engines": {
+    "node": ">=22.15"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "cordis",
+    "plugin",
+    "bundle",
+    "cleanup",
+    "storage"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "lib",
+    "locale/*.json",
+    "icon.svg",
+    "cordis.patch.yml",
+    "README.md",
+    "DESIGN.md",
+    "docs",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "DSH Cleanup",
+    "description": "Health check, session cleanup, orphan attachment cleanup, and backup restore. Every deletion moves data to backups/ first and stays reversible."
+  }
+}

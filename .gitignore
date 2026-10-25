@@ -1,0 +1,9 @@
+node_modules/
+# 测试夹具（每次跑测试都会重建，里面有假的 DSH_HOME）
+_test/
+*locks.json
+*.log
+*.tmp-*
+.env
+.DS_Store
+Thumbs.db

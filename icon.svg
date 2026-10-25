@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="DSH Cleanup">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2f7de1"/>
+      <stop offset="1" stop-color="#12a594"/>
+    </linearGradient>
+  </defs>
+  <path d="M32 4 8 13v18c0 14 10.2 24.4 24 29 13.8-4.6 24-15 24-29V13L32 4Z" fill="url(#g)"/>
+  <path d="M32 9.6 13.2 16.7v14.3c0 11.2 7.9 19.8 18.8 23.8 10.9-4 18.8-12.6 18.8-23.8V16.7L32 9.6Z" fill="#fff" opacity=".18"/>
+  <path d="m22 34.5 6.4 6.4L43 23.3" fill="none" stroke="#fff" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="47" cy="18" r="4.6" fill="#fff" opacity=".92"/>
+  <circle cx="47" cy="18" r="2.1" fill="#12a594"/>
+</svg>

@@ -1,0 +1,17 @@
+# dsh-cleanup（DSH 清理）bundle patch。
+#
+# 安装到 profile 后，这一行把插件插进配置树；config 里的值会传给 index.js 的 apply(ctx, config)。
+#
+# protectedSessionIds 是「永不删除」名单。仓库里**故意留空**：别把自己的会话 id 提交上来。
+# 两种填法：
+#   1) 直接改这里（适合本地自用，注意别把 id 提交进公开仓库）；
+#   2) 更推荐：在你 profile 的 cordis.patch.yml 里用 `- id: dsh-cleanup` 覆盖 config
+#      （Loader 的 config 是整体替换，记得把 freshMinutes / recentSessionMinutes 一起写全）。
+# 面板里给对话「上锁」不需要改这里，锁名单存在 $DSH_HOME/dsh-cleanup/locks.json。
+- insert:
+    - id: dsh-cleanup
+      name: '@local/dsh-cleanup'
+      config:
+        protectedSessionIds: []
+        freshMinutes: 30
+        recentSessionMinutes: 5
