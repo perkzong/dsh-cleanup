@@ -55,13 +55,28 @@ need a typed `yes`, and scans run in a worker thread so the UI never freezes.
 
 > 要求：Node **≥ 22.15**（用到 `zlib` 的 zstd），DSH 桌面版或 Web 版。
 
-### 3.1 推荐：`plugin_manager`
+### 3.1 三种装法，按你的网络选
+
+| 场景 | 做法 |
+|---|---|
+| **A. 直接指向 GitHub 仓库**（能稳定访问 GitHub） | 插件页 **Plugins → Add plugin** 填 `github:st0pandg0/dsh-cleanup`；或 Agent 里 `plugin_manager({ action: 'install_bundle', target: 'github:st0pandg0/dsh-cleanup' })` |
+| **B. 本地目录**（推荐给大陆网络，最稳） | 在 GitHub 页面点 **Code → Download ZIP** → 解压 → 在 Add plugin 里填**解压后的绝对路径**（如 `D:\dsh-cleanup-main`），或 `plugin_manager({ action: 'install_bundle', target: 'D:\\dsh-cleanup-main' })` |
+| **C. 手工改 profile**（没有 `plugin_manager` 时） | 见 §3.2 |
+
+**A 的两个前提**（都是宿主的行为，不是本插件的）：
+
+1. 填的必须是 pnpm 认识的 Git 地址 —— `github:owner/repo`、`git+https://github.com/owner/repo.git`、
+   或 `git+ssh://…`。裸的 `https://github.com/owner/repo`（没有 `.git`）不是 Git spec，会失败。
+2. 安装前 Host 会先对该仓库跑一次 `git ls-remote` 探测（默认 5 秒超时）。连不上 GitHub 会直接失败并报
+   **Cannot access GitHub**；界面上的"使用国内镜像"只换 npm registry，**救不了 GitHub 仓库本身** ——
+   这时候请改用 B。
+
+B 不需要联网：本包**没有任何 `dependencies`**（只依赖宿主自带的 DSH 包与 React），
+`pnpm add` 本地目录不会去下载别的东西。
 
 ```text
-# 1) 把仓库放到任意目录，例如 ~/code/dsh-cleanup
+# A 的 clone 版（想改代码/跟更新时用）
 git clone https://github.com/st0pandg0/dsh-cleanup.git ~/code/dsh-cleanup
-
-# 2) 在带 plugin_manager 工具的 DSH 会话里执行（target 传绝对路径）
 plugin_manager({ action: 'install_bundle', target: '~/code/dsh-cleanup' })
 ```
 
@@ -87,6 +102,21 @@ plugin_manager({ action: 'install_bundle', target: '~/code/dsh-cleanup' })
 
 > 包名 `@local/dsh-cleanup` 是本地 bundle 的约定，没有发布到 npm；想改名请同时改
 > `package.json`、`cordis.patch.yml` 和 profile 里的依赖名。
+
+### 3.4 版本与 Releases（可选）
+
+这个插件是**源码即产物**：没有构建步骤，所以 GitHub **Releases 空着是正常的**，
+安装也不需要它（从仓库或本地目录装即可）。
+
+想要"能锁版本"再发版，打 tag 就够：
+
+```bash
+git tag -a v0.1.0 -m "v0.1.0"
+git push origin v0.1.0
+```
+
+之后在 GitHub **Releases → Draft a new release** 选中该 tag 发布（GitHub 会自动附上源码 zip）。
+别人就能装固定版本：`github:st0pandg0/dsh-cleanup#v0.1.0`。
 
 ---
 
