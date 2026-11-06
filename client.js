@@ -5,7 +5,7 @@
  * 不重复安装、不引入任何 @deepseek-ai/* 包，也不读别的插件的 DOM。
  *
  * 所有数据来自 Host 路由 /dsh-cleanup/api/*，删除逻辑一律在 Host（lib/ops.js），
- * 这里只负责展示与"输入 yes"的确认，不自己实现删除。
+ * 这里只负责展示与交互，不自己实现删除（2026-11-06 起不再有"输入 yes"确认步骤）。
  */
 window.__ModuleLoader__.load({
   id: '@local/dsh-cleanup',
@@ -13,6 +13,18 @@ window.__ModuleLoader__.load({
     const React = require('react')
     const h = React.createElement
     const NS = 'dsh-cleanup'
+
+    /**
+     * 侧边栏主面板的标识。
+     *
+     * `main` 槽位用 `key`、`sidebar.panellist` 槽位用 `id`，两个值必须一致，
+     * 宿主才会把面板行和页面接起来（`layout.selectPanel` 按 key 查找页面）。
+     *
+     * 注意：这两个值**只在 apply() 内部按字面量直接用**，不要抽成模块级
+     * const 再跨函数引用——客户端模块热重载时宿主可能只重跑 apply() 而不重建
+     * 整个 factory 闭包，那时模块级 const 处于 TDZ，一读就是
+     * "PANEL_KEY is not defined"（2026-11-06 踩过）。
+     */
 
     /* ============================ 词典 ============================ */
 
@@ -48,7 +60,7 @@ window.__ModuleLoader__.load({
       badgeFresh: '最近改动 · 已锁定',
       badgeLinked: '硬链接 · 不额外占空间',
       badgeRestorable: '可还原',
-      protectedNote: '🔒 内置保护的对话永不删除（在 cordis.patch.yml 里配置）；「上锁」的对话同样不会被删，解锁要再输一次 yes。',
+      protectedNote: '🔒 内置保护的对话永不删除（在 cordis.patch.yml 里配置）；「上锁」的对话同样不会被删。',
       deleteSelected: '删除选中',
       cleanSelected: '清理选中',
       deleteBackupSelected: '删除选中备份',
@@ -61,34 +73,6 @@ window.__ModuleLoader__.load({
       loading: '加载中…',
       loadFailed: '加载失败',
       retry: '重试',
-      confirmDeleteTitle: '确认删除 {n} 个对话？',
-      confirmDeleteBody: '这会把这些对话移到备份文件夹（不是销毁）。磁盘空间要等你删除备份后才真正释放。',
-      confirmDeleteHint: '受保护的对话会被自动跳过；最近还在写入的对话也会被跳过。',
-      confirmCleanTitle: '确认清理 {n} 项孤儿附件？',
-      confirmCleanBody: '这些附件已没有任何在用对话引用，会被移到备份文件夹。',
-      confirmCleanHint: '最近 30 分钟内改动过的文件会被自动跳过；tmp/ 永不动。',
-      confirmRestoreTitle: '确认还原备份？',
-      confirmRestoreBody: '会把备份里的对话/附件搬回原位置；原位置已存在同名项时会跳过。',
-      confirmRestoreHint: '还原后需要重启 DSH，侧边栏才会刷新。',
-      confirmDeleteBackupTitle: '确认永久删除 {n} 个备份？',
-      confirmDeleteBackupBody: '这是唯一不可恢复的操作：备份里的对话/附件会被真正销毁，磁盘空间立即释放。',
-      confirmDeleteBackupHint: '如果还可能需要找回，请先点「取消」。',
-      confirmLockTitle: '锁定这个对话？',
-      confirmLockBody: '锁定后这个对话不会被删除（删除时会被跳过）；它仍然可以正常打开、继续聊。',
-      confirmLockHint: '解锁同样要输入 yes。',
-      confirmLockAction: '上锁',
-      confirmUnlockTitle: '解锁这个对话？',
-      confirmUnlockBody: '解锁后它恢复成普通对话，可以被删除（删除依然会先移到备份文件夹）。',
-      confirmUnlockHint: '重新上锁同样要输入 yes。',
-      confirmUnlockAction: '解锁',
-      confirmInputLabel: '请输入 yes 确认：',
-      confirmPlaceholder: 'yes',
-      cancel: '取消',
-      confirmDeleteAction: '移到备份',
-      confirmCleanAction: '移到备份',
-      confirmRestoreAction: '还原',
-      confirmDeleteBackupAction: '永久删除',
-      running: '执行中…',
       resultTitle: '完成',
       backupAt: '备份位置',
       movedCount: '已移动 {n} 项',
@@ -103,7 +87,11 @@ window.__ModuleLoader__.load({
       total: '共 {n} 项',
       registryYes: '宿主归档接口可用',
       registryNo: '宿主归档接口不可用（将退回改文件）',
-      selectAllHint: '只能逐项勾选，没有“一键全删”。',
+      selectAllHint: '「全选」只勾可选项：受保护、已锁定、最近改动的会自动跳过。',
+      selectAll: '全选',
+      selectNone: '取消全选',
+      selectAllCount: '全选（{n}）',
+      selectAllEmpty: '没有可选项',
       staleHint: '列表可能已过期，建议重新体检。',
       lastScanLabel: '体检时间',
       suggestOrphans: '有 {n} 个孤儿附件（{size}），可在「孤儿附件」页处理。',
@@ -172,7 +160,7 @@ window.__ModuleLoader__.load({
       badgeFresh: 'Modified recently · locked',
       badgeLinked: 'Hard link · no extra space',
       badgeRestorable: 'Restorable',
-      protectedNote: '🔒 Built-in protection is configured in cordis.patch.yml and never removable here; a Locked session is also skipped on delete, and unlocking asks for yes again.',
+      protectedNote: '🔒 Built-in protection is configured in cordis.patch.yml and never removable here; a Locked session is also skipped on delete.',
       deleteSelected: 'Delete selected',
       cleanSelected: 'Clean selected',
       deleteBackupSelected: 'Delete selected backups',
@@ -185,34 +173,6 @@ window.__ModuleLoader__.load({
       loading: 'Loading…',
       loadFailed: 'Failed to load',
       retry: 'Retry',
-      confirmDeleteTitle: 'Delete {n} session(s)?',
-      confirmDeleteBody: 'They are moved to the backups folder, not destroyed. Disk space is only reclaimed after you delete the backup.',
-      confirmDeleteHint: 'Protected sessions are skipped, and sessions written recently are skipped too.',
-      confirmCleanTitle: 'Clean {n} orphan item(s)?',
-      confirmCleanBody: 'These attachments are no longer referenced by any session and will be moved to the backups folder.',
-      confirmCleanHint: 'Files modified in the last 30 minutes are skipped; tmp/ is never touched.',
-      confirmRestoreTitle: 'Restore this backup?',
-      confirmRestoreBody: 'Sessions/attachments are moved back to their original locations; existing entries are skipped.',
-      confirmRestoreHint: 'Restart DSH afterwards for the sidebar to refresh.',
-      confirmDeleteBackupTitle: 'Permanently delete {n} backup(s)?',
-      confirmDeleteBackupBody: 'This is the only irreversible action: the backup contents are destroyed and disk space is freed immediately.',
-      confirmDeleteBackupHint: 'Press Cancel if you might still need them.',
-      confirmLockTitle: 'Lock this session?',
-      confirmLockBody: 'A locked session is skipped when deleting; you can still open it and keep chatting.',
-      confirmLockHint: 'Unlocking also asks for yes.',
-      confirmLockAction: 'Lock',
-      confirmUnlockTitle: 'Unlock this session?',
-      confirmUnlockBody: 'It becomes an ordinary session again and can be deleted (still moved to backups first).',
-      confirmUnlockHint: 'Locking again also asks for yes.',
-      confirmUnlockAction: 'Unlock',
-      confirmInputLabel: 'Type yes to confirm:',
-      confirmPlaceholder: 'yes',
-      cancel: 'Cancel',
-      confirmDeleteAction: 'Move to backups',
-      confirmCleanAction: 'Move to backups',
-      confirmRestoreAction: 'Restore',
-      confirmDeleteBackupAction: 'Delete permanently',
-      running: 'Working…',
       resultTitle: 'Done',
       backupAt: 'Backup location',
       movedCount: 'Moved {n} item(s)',
@@ -227,7 +187,11 @@ window.__ModuleLoader__.load({
       total: '{n} item(s)',
       registryYes: 'Host archive API available',
       registryNo: 'Host archive API unavailable (falls back to file edits)',
-      selectAllHint: 'Select items one by one; there is no select-all.',
+      selectAllHint: '"Select all" only picks selectable rows: protected, locked, and recently modified items are skipped.',
+      selectAll: 'Select all',
+      selectNone: 'Clear selection',
+      selectAllCount: 'Select all ({n})',
+      selectAllEmpty: 'Nothing selectable',
       staleHint: 'This list may be stale. Re-check health.',
       lastScanLabel: 'Checked at',
       suggestOrphans: '{n} orphan attachment(s) ({size}) — open the Orphans tab to review them.',
@@ -330,6 +294,9 @@ window.__ModuleLoader__.load({
 `
 
     const CSS = BASE_CSS + `
+/* 侧边栏主面板：占满中央区域，内容限宽避免大屏上表格被拉得太散 */
+.dshc-main{height:100%;overflow-y:auto;box-sizing:border-box;padding:20px 24px 40px}
+.dshc-main .dshc-root{max-width:1080px;margin:0 auto}
 .dshc-root{color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.55;display:flex;flex-direction:column;gap:14px;padding:2px}
 .dshc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .dshc-title{margin:0;font-size:16px;font-weight:600;color:var(--dsw-alias-label-primary)}
@@ -371,14 +338,6 @@ window.__ModuleLoader__.load({
 .dshc-banner-ok{border-color:var(--dsw-alias-state-success-tertiary)}
 .dshc-banner-err{border-color:var(--dsw-alias-state-error-primary)}
 .dshc-banner-title{font-weight:600}
-.dshc-overlay{position:fixed;inset:0;background:rgba(0,0,0,.42);display:flex;align-items:center;justify-content:center;z-index:80;padding:20px}
-.dshc-dialog{width:min(480px,100%);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:12px;box-shadow:0 16px 48px rgba(0,0,0,.28);padding:16px 18px;display:flex;flex-direction:column;gap:10px}
-.dshc-dialog h3{margin:0;font-size:14.5px;font-weight:600}
-.dshc-dialog p{margin:0;font-size:12.5px;color:var(--dsw-alias-label-secondary)}
-.dshc-dialog .dshc-hint{color:var(--dsw-alias-label-tertiary);font-size:11.5px}
-.dshc-input{width:100%;box-sizing:border-box;background:var(--dsw-alias-bg-layer-3);border:1px solid var(--dsw-alias-border-l2);border-radius:7px;color:var(--dsw-alias-label-primary);padding:7px 9px;font-size:13px;font-family:inherit;outline:none}
-.dshc-input:focus{border-color:var(--dsw-alias-brand-primary)}
-.dshc-dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:2px}
 .dshc-foot{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .dshc-warn{color:var(--dsw-alias-state-warn-primary);font-size:11.5px}
 .dshc-error{color:var(--dsw-alias-state-error-primary)}
@@ -422,6 +381,27 @@ window.__ModuleLoader__.load({
     function Badge({ kind, children }) {
       const cls = kind === 'warn' ? ' dshc-badge-warn' : kind === 'ok' ? ' dshc-badge-ok' : kind === 'danger' ? ' dshc-badge-danger' : ''
       return h('span', { className: 'dshc-badge' + cls }, children)
+    }
+
+    /**
+     * 「全选」按钮，放在每个删除按钮的左边。
+     *
+     * 三态由调用方算好传进来：可选 0 项时禁用并显示「没有可选项」；
+     * 已全选时文案变成「取消全选」——同一个按钮做切换，比并排放两个更省地方，
+     * 也让"当前到底选没选满"一眼可见。
+     */
+    function SelectAllButton({ t, count, allSelected, onToggle }) {
+      const empty = count === 0
+      const label = empty
+        ? t('selectAllEmpty')
+        : allSelected
+          ? t('selectNone')
+          : t('selectAllCount').replace('{n}', count)
+      return h(Button, {
+        onClick: onToggle,
+        disabled: empty,
+        title: empty ? t('selectAllEmpty') : label,
+      }, label)
     }
 
     function Stat({ label, value, sub }) {
@@ -559,7 +539,6 @@ window.__ModuleLoader__.load({
 
     const CARD_STATE = {
       preparing: { key: 'cardStatePreparing', cls: '' },
-      running: { key: 'cardStateRunning', cls: '' },
       ok: { key: 'cardStateOk', cls: ' dshc-badge-ok' },
       refused: { key: 'cardStateRefused', cls: ' dshc-badge-warn' },
       failed: { key: 'cardStateFailed', cls: ' dshc-badge-danger' },
@@ -660,67 +639,6 @@ window.__ModuleLoader__.load({
       )
     }
 
-    /** 统一确认弹窗：必须手动输入 yes，Esc 关闭，焦点在输入框。 */
-    function ConfirmDialog({ t, intent, onClose, onConfirm }) {
-      const [text, setText] = React.useState('')
-      const [running, setRunning] = React.useState(false)
-      const inputRef = React.useRef(null)
-      const ok = text.trim() === 'yes'
-
-      React.useEffect(() => {
-        if (inputRef.current) inputRef.current.focus()
-      }, [])
-
-      React.useEffect(() => {
-        const onKey = (e) => {
-          if (e.key === 'Escape' && !running) onClose()
-        }
-        window.addEventListener('keydown', onKey)
-        return () => window.removeEventListener('keydown', onKey)
-      }, [running, onClose])
-
-      const submit = async () => {
-        if (!ok || running) return
-        setRunning(true)
-        try { await onConfirm('yes') } finally { setRunning(false) }
-      }
-
-      const danger = intent.kind === 'delete-backups'
-      return h('div', {
-        className: 'dshc-overlay',
-        onMouseDown: (e) => { if (e.target === e.currentTarget && !running) onClose() },
-      }, h('div', {
-        className: 'dshc-dialog',
-        role: 'dialog',
-        'aria-modal': 'true',
-        'aria-labelledby': 'dshc-dialog-title',
-      },
-      h('h3', { id: 'dshc-dialog-title' }, intent.title),
-      h('p', null, intent.body),
-      intent.hint ? h('p', { className: 'dshc-hint' }, intent.hint) : null,
-      h('label', { className: 'dshc-hint', htmlFor: 'dshc-confirm-input' }, t('confirmInputLabel')),
-      h('input', {
-        id: 'dshc-confirm-input',
-        ref: inputRef,
-        className: 'dshc-input',
-        value: text,
-        placeholder: t('confirmPlaceholder'),
-        autoComplete: 'off',
-        spellCheck: false,
-        disabled: running,
-        onChange: (e) => setText(e.target.value),
-        onKeyDown: (e) => { if (e.key === 'Enter') submit() },
-      }),
-      h('div', { className: 'dshc-dialog-actions' },
-        h(Button, { onClick: onClose, disabled: running }, t('cancel')),
-        h(Button, {
-          variant: danger ? 'danger' : 'primary',
-          onClick: submit,
-          disabled: !ok || running,
-        }, running ? t('running') : intent.confirmLabel),
-      )))
-    }
-
     /* ============================ 主面板 ============================ */
 
     function Panel({ t }) {
@@ -735,7 +653,6 @@ window.__ModuleLoader__.load({
       const [lastScan, setLastScan] = React.useState(0)
       const [error, setError] = React.useState('')
       const [notice, setNotice] = React.useState(null)
-      const [intent, setIntent] = React.useState(null)
       const alive = React.useRef(true)
 
       React.useEffect(() => () => { alive.current = false }, [])
@@ -798,97 +715,110 @@ window.__ModuleLoader__.load({
         setSelected((prev) => ({ ...prev, [which]: [] }))
       }
 
-      /* ---- 意图 ---- */
-      const askDeleteSessions = () => {
-        const ids = sel.slice()
-        if (!ids.length) return
-        setIntent({
-          kind: 'delete-sessions',
-          ids,
-          title: substitute(t('confirmDeleteTitle'), { n: ids.length }),
-          body: t('confirmDeleteBody'),
-          hint: t('confirmDeleteHint'),
-          confirmLabel: t('confirmDeleteAction'),
-        })
+      /**
+       * 当前标签页里**真正可删**的那些项。全选只能落在这个集合上：
+       * 受保护/已锁的会话、30 分钟内刚动过的孤儿附件在界面上是灰的，
+       * 把它们塞进选中态只会让「删除选中（N）」的 N 虚高，删的时候照样被跳过。
+       */
+      const selectableIds = React.useMemo(() => {
+        if (tab === 'sessions') {
+          const items = sessions ? sessions.items : []
+          return items.filter((s) => !s.protected && !s.locked).map((s) => s.id)
+        }
+        if (tab === 'orphans') {
+          const items = orphans ? orphans.items : []
+          return items.filter((it) => !it.fresh).map((it) => it.relPath)
+        }
+        const items = backups ? backups.items : []
+        return items.map((b) => b.name)
+      }, [tab, sessions, orphans, backups])
+
+      const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selSet.has(id))
+      const someSelected = selectableIds.some((id) => selSet.has(id))
+
+      /** 全选 ⇄ 取消全选：已全选时清空，否则一次选满可选项。 */
+      const toggleSelectAll = () => {
+        setSelected((prev) => ({ ...prev, [tab]: allSelected ? [] : selectableIds.slice() }))
       }
 
-      const askCleanOrphans = () => {
-        const paths = sel.slice()
-        if (!paths.length) return
-        setIntent({
-          kind: 'clean-orphans',
-          paths,
-          title: substitute(t('confirmCleanTitle'), { n: paths.length }),
-          body: t('confirmCleanBody'),
-          hint: t('confirmCleanHint'),
-          confirmLabel: t('confirmCleanAction'),
-        })
-      }
+      /* ---- 执行 ---- */
 
-      const askRestore = (name) => {
-        setIntent({
-          kind: 'restore-backup',
-          name,
-          title: t('confirmRestoreTitle') + ' · ' + name,
-          body: t('confirmRestoreBody'),
-          hint: t('confirmRestoreHint'),
-          confirmLabel: t('confirmRestoreAction'),
-        })
-      }
+      /**
+       * 所有破坏性/变更性操作都走这里，**点下按钮立刻执行，不再弹确认框**。
+       *
+       * 2026-11-06 按用户要求去掉了「输入 yes」的确认对话框。保留的安全网是
+       * Host 侧的硬约束，客户端绕不过去：
+       *   - 删除一律是"移到备份文件夹"，不是销毁；
+       *   - 受保护 / 已锁定 / 最近写入的会话，Host 自己会跳过；
+       *   - 二次确认的代价改由「按钮本身写明数量 + 执行后 banner 汇报」承担。
+       * 真正不可逆的「永久删除备份」刻意保留了 danger 样式和红色按钮，视觉上仍有区分。
+       *
+       * @param {'delete-sessions'|'clean-orphans'|'restore-backup'|'delete-backups'|'lock-session'|'unlock-session'} kind
+       * @param {object} payload 该操作需要的参数（ids / paths / names / name / id）
+       */
+      const run = async (kind, payload) => {
+        if (busy) return
+        setIfAlive(() => { setBusy('op'); setNotice(null); setError('') })
 
-      // 上锁 / 解锁：两个方向都要在弹窗里输入 yes
-      const askLock = (session, locked) => {
-        if (!session || !session.id) return
-        setIntent({
-          kind: locked ? 'lock-session' : 'unlock-session',
-          id: session.id,
-          locked,
-          title: (locked ? t('confirmLockTitle') : t('confirmUnlockTitle')) + ' · ' + (session.title || session.id),
-          body: locked ? t('confirmLockBody') : t('confirmUnlockBody'),
-          hint: locked ? t('confirmLockHint') : t('confirmUnlockHint'),
-          confirmLabel: locked ? t('confirmLockAction') : t('confirmUnlockAction'),
-        })
-      }
-
-      const askDeleteBackups = () => {
-        const names = sel.slice()
-        if (!names.length) return
-        setIntent({
-          kind: 'delete-backups',
-          names,
-          title: substitute(t('confirmDeleteBackupTitle'), { n: names.length }),
-          body: t('confirmDeleteBackupBody'),
-          hint: t('confirmDeleteBackupHint'),
-          confirmLabel: t('confirmDeleteBackupAction'),
-        })
-      }
-
-      const runIntent = async (confirmation) => {
-        if (!intent) return
         let r
         try {
-          if (intent.kind === 'delete-sessions') r = await postJson('/delete-sessions', { ids: intent.ids, confirm: confirmation })
-          else if (intent.kind === 'clean-orphans') r = await postJson('/clean-orphans', { paths: intent.paths, confirm: confirmation })
-          else if (intent.kind === 'restore-backup') r = await postJson('/restore-backup', { name: intent.name, confirm: confirmation })
-          else if (intent.kind === 'delete-backups') r = await postJson('/delete-backups', { names: intent.names, confirm: confirmation })
-          else if (intent.kind === 'lock-session' || intent.kind === 'unlock-session') {
-            r = await postJson('/set-lock', { id: intent.id, locked: intent.kind === 'lock-session', confirm: confirmation })
+          if (kind === 'delete-sessions') r = await postJson('/delete-sessions', { ids: payload.ids })
+          else if (kind === 'clean-orphans') r = await postJson('/clean-orphans', { paths: payload.paths })
+          else if (kind === 'restore-backup') r = await postJson('/restore-backup', { name: payload.name })
+          else if (kind === 'delete-backups') r = await postJson('/delete-backups', { names: payload.names })
+          else if (kind === 'lock-session' || kind === 'unlock-session') {
+            r = await postJson('/set-lock', { id: payload.id, locked: kind === 'lock-session' })
+          } else {
+            r = { ok: false, message: '未知操作: ' + kind }
           }
         } catch (e) {
           r = { ok: false, message: (e && e.message) || String(e) }
         }
-        setIntent(null)
-        const isLockOp = intent.kind === 'lock-session' || intent.kind === 'unlock-session'
-        const affected = intent.kind === 'delete-sessions' || isLockOp ? 'sessions'
-          : intent.kind === 'clean-orphans' ? 'orphans'
+
+        const isLockOp = kind === 'lock-session' || kind === 'unlock-session'
+        const affected = kind === 'delete-sessions' || isLockOp ? 'sessions'
+          : kind === 'clean-orphans' ? 'orphans'
             : 'backups'
+
         setIfAlive(() => {
+          setBusy('')
           setNotice(r || { ok: false, message: t('loadFailed') })
           // 上锁/解锁不动勾选（用户可能正在攒一批要删的对话）
           if (r && r.ok && !isLockOp) clearSelection(affected)
         })
         await loadHealth()
         await loadTab(isLockOp ? 'sessions' : tab)
+      }
+
+      /* ---- 各操作的入口：点按钮直接调 run() ---- */
+
+      const askDeleteSessions = () => {
+        const ids = sel.slice()
+        if (!ids.length) return
+        run('delete-sessions', { ids })
+      }
+
+      const askCleanOrphans = () => {
+        const paths = sel.slice()
+        if (!paths.length) return
+        run('clean-orphans', { paths })
+      }
+
+      const askRestore = (name) => {
+        if (!name) return
+        run('restore-backup', { name })
+      }
+
+      /** 上锁 / 解锁：点一下立即生效，不再要求输入 yes。 */
+      const askLock = (session, locked) => {
+        if (!session || !session.id) return
+        run(locked ? 'lock-session' : 'unlock-session', { id: session.id })
+      }
+
+      const askDeleteBackups = () => {
+        const names = sel.slice()
+        if (!names.length) return
+        run('delete-backups', { names })
       }
 
       /* ---- 渲染 ---- */
@@ -942,6 +872,47 @@ window.__ModuleLoader__.load({
           h('div', { className: 'dshc-actions' }, h(Button, { variant: 'link', onClick: () => setNotice(null) }, t('close'))),
         )
         : null
+
+      /* ---- 操作栏（提到标签行上方，三个标签页共用一条）---- */
+      // 每个标签页原本各有一条 footer，现在统一抽到这里，渲染在 tabs 之上。
+      const actionBar = (() => {
+        const common = (primary, note) => [
+          h(SelectAllButton, {
+            t,
+            count: selectableIds.length,
+            allSelected,
+            someSelected,
+            onToggle: toggleSelectAll,
+          }),
+          primary,
+          h('span', { className: 'dshc-dim' }, t('selectAllHint')),
+          note ? h('span', { className: 'dshc-dim' }, note) : null,
+        ]
+        if (tab === 'sessions') {
+          return common(
+            h(Button, { variant: 'danger', onClick: askDeleteSessions, disabled: !sel.length }, t('deleteSelected') + '（' + sel.length + '）'),
+            t('protectedNote'),
+          )
+        }
+        if (tab === 'orphans') {
+          const data = orphans
+          const selectedBytes = data
+            ? data.items.filter((it) => selSet.has(it.relPath)).reduce((s, it) => s + (it.bytes || 0), 0)
+            : 0
+          return common(
+            h(Button, {
+              variant: 'danger',
+              onClick: askCleanOrphans,
+              disabled: !sel.length,
+            }, t('cleanSelected') + '（' + sel.length + '，' + fmtBytes(selectedBytes) + '）'),
+            t('orphanNote'),
+          )
+        }
+        return common(
+          h(Button, { variant: 'danger', onClick: askDeleteBackups, disabled: !sel.length }, t('deleteBackupSelected') + '（' + sel.length + '）'),
+          null,
+        )
+      })()
 
       const tabs = h('div', {
         className: 'dshc-tabs',
@@ -1017,11 +988,6 @@ window.__ModuleLoader__.load({
                   }, s.locked ? t('unlockAction') : t('lockAction')),
               )),
           ),
-          h('div', { className: 'dshc-foot' },
-            h(Button, { variant: 'danger', onClick: askDeleteSessions, disabled: !sel.length }, t('deleteSelected') + '（' + sel.length + '）'),
-            h('span', { className: 'dshc-dim' }, t('selectAllHint')),
-          ),
-          h('div', { className: 'dshc-dim' }, t('protectedNote')),
         )
       } else if (tab === 'orphans') {
         const data = orphans
@@ -1063,15 +1029,6 @@ window.__ModuleLoader__.load({
                   )),
                 )),
             ),
-          h('div', { className: 'dshc-foot' },
-            h(Button, {
-              variant: 'danger',
-              onClick: askCleanOrphans,
-              disabled: !sel.length,
-            }, t('cleanSelected') + '（' + sel.length + '，' + fmtBytes(selectedBytes) + '）'),
-            h('span', { className: 'dshc-dim' }, t('selectAllHint')),
-          ),
-          h('div', { className: 'dshc-dim' }, t('orphanNote')),
         )
       } else {
         const items = backups ? backups.items : []
@@ -1111,10 +1068,6 @@ window.__ModuleLoader__.load({
                   : h('span', null, ''),
               )),
           ),
-          h('div', { className: 'dshc-foot' },
-            h(Button, { variant: 'danger', onClick: askDeleteBackups, disabled: !sel.length }, t('deleteBackupSelected') + '（' + sel.length + '）'),
-            h('span', { className: 'dshc-dim' }, t('selectAllHint')),
-          ),
         )
       }
 
@@ -1132,11 +1085,10 @@ window.__ModuleLoader__.load({
         ) : null,
         noticeBanner,
         healthCard,
+        // 操作栏在标签行上方：先选后切页，切换标签时按钮跟着当前页变
+        h('div', { className: 'dshc-foot dshc-foot-top' }, ...actionBar),
         tabs,
         h('div', { role: 'tabpanel', 'aria-label': t('title') }, body),
-        intent
-          ? h(ConfirmDialog, { t, intent, onClose: () => setIntent(null), onConfirm: runIntent })
-          : null,
       )
     }
 
@@ -1167,6 +1119,43 @@ window.__ModuleLoader__.load({
       return h(Boundary, null, h(Panel, { t }))
     }
 
+    /* ============================ 侧边栏主面板 ============================ */
+
+    /**
+     * 侧边栏面板行的图标。不引 @deepseek-ai/* 的 icon 包（客户端模块只拿得到
+     * react），所以这里用内联 SVG，走 currentColor 跟随宿主主题。
+     */
+    function CleanupIcon({ size }) {
+      const s = size || 16
+      return h('svg', {
+        width: s,
+        height: s,
+        viewBox: '0 0 16 16',
+        fill: 'none',
+        xmlns: 'http://www.w3.org/2000/svg',
+        'aria-hidden': 'true',
+      },
+        h('path', {
+          d: 'M3.2 3.2h2.1v2.1H3.2zM7 3.2h5.8M7 5.3h4.2M3.2 7.6h2.1v2.1H3.2zM7 7.6h5.8M7 9.7h4.2M3.2 12h2.1v2.1H3.2zM7 12h5.8M7 14.1h4.2',
+          stroke: 'currentColor',
+          strokeWidth: '1.2',
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+        }),
+      )
+    }
+
+    /**
+     * 侧边栏主面板：工作区列表之上的一个独立页面（main 槽位，key = 'cleanup'）。
+     * 内容与设置页里那一页是同一个 Panel，数据仍由 Host 的 /dsh-cleanup/api/* 提供。
+     */
+    function MainPage(props) {
+      const t = (props && props.t) || ((key) => zh[key] || key)
+      return h(Boundary, null,
+        h('div', { className: 'dshc-main' }, h(Panel, { t })),
+      )
+    }
+
     /* ============================ 插件入口 ============================ */
 
     return {
@@ -1186,6 +1175,30 @@ window.__ModuleLoader__.load({
               locale: NS,
               inject: () => ({ t }),
             }, (ownerProps) => h(Section, Object.assign({}, ownerProps, { t })))
+            return typeof off === 'function' ? off : () => {}
+          })
+
+          // 侧边栏主面板：跟「插件 / 自动化任务 / 更多」并排，位于工作区列表上方。
+          // 两个槽位靠同一个 id 关联 —— main 提供页面内容，panellist 提供那一行入口。
+          // key / id 就地写死，理由见 PANEL_KEY 的注释。
+          ctx.slots.inject('main', () => {
+            const off = ctx.slots.register({
+              name: 'main',
+              key: 'cleanup',
+              locale: NS,
+              inject: () => ({ t }),
+            }, (ownerProps) => h(MainPage, Object.assign({}, ownerProps, { t })))
+            return typeof off === 'function' ? off : () => {}
+          })
+
+          ctx.slots.inject('sidebar.panellist', () => {
+            const off = ctx.slots.register({
+              name: 'sidebar.panellist',
+              id: 'cleanup',
+              order: 20,
+              locale: NS,
+              label: () => t('nav'),
+            }, (ownerProps) => h(CleanupIcon, ownerProps || {}))
             return typeof off === 'function' ? off : () => {}
           })
 

@@ -91,16 +91,20 @@ test('apply() 注册两个工具与全部路由', async () => {
   ])
 })
 
-test('cleanup_apply 不带 confirm 时拒绝', async () => {
+test('cleanup_apply 不再要求 confirm 参数', async () => {
   const meta = buildFixture(path.join(CASES, 'host-confirm'))
   const { ctx, tools } = makeCtx()
   apply(ctx, { dshHome: meta.dshHome, protectedSessionIds: [PROTECTED_ID] })
   const tool = tools.find((t) => t.name === 'cleanup_apply')
 
-  const res = await tool.execute({ action: 'delete_sessions', confirm: false, ids: [meta.ids.alpha] })
-  assert.equal(res.ok, false)
-  assert.equal(res.code, 'NEED_USER_APPROVAL')
-  assert.equal(fs.existsSync(path.join(meta.paths.bucketA, meta.ids.alpha)), true)
+  // 2026-11-06 移除 yes 确认：参数表里不应再有 confirm，required 只剩 action
+  assert.equal(Object.hasOwn(tool.parameters.properties, 'confirm'), false)
+  assert.deepEqual(tool.parameters.required, ['action'])
+
+  // 不传 confirm 也能真的执行
+  const res = await tool.execute({ action: 'delete_sessions', ids: [meta.ids.alpha] })
+  assert.equal(res.ok, true)
+  assert.equal(fs.existsSync(path.join(meta.paths.bucketA, meta.ids.alpha)), false)
 })
 
 test('cleanup_apply 缺少 ids 时拒绝', async () => {
@@ -159,13 +163,13 @@ test('HTTP：GET health 正常；POST 缺自定义头被拒 403', async () => {
 
   res = makeRes()
   await findRoute(routes, '/dsh-cleanup/api/delete-sessions').handler(
-    makeReq({ method: 'POST', headers: { 'content-type': 'application/json' }, body: { ids: [meta.ids.alpha], confirm: 'yes' } }),
+    makeReq({ method: 'POST', headers: { 'content-type': 'application/json' }, body: { ids: [meta.ids.alpha] } }),
     res,
   )
   assert.equal(res.status, 403)
 })
 
-test('HTTP：POST 带确认但 confirm 不是 yes → 400，且数据没动', async () => {
+test('HTTP：POST 不再需要 confirm，直接执行', async () => {
   const meta = buildFixture(path.join(CASES, 'host-http-confirm'))
   const { ctx, routes } = makeCtx()
   apply(ctx, { dshHome: meta.dshHome, protectedSessionIds: [PROTECTED_ID] })
@@ -175,15 +179,12 @@ test('HTTP：POST 带确认但 confirm 不是 yes → 400，且数据没动', as
     makeReq({
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-dsh-cleanup': '1' },
-      body: { ids: [meta.ids.alpha], confirm: 'no' },
+      body: { ids: [meta.ids.alpha] },
     }),
     res,
   )
-  assert.equal(res.status, 400)
-  const payload = JSON.parse(res.body)
-  assert.equal(payload.ok, false)
-  assert.equal(payload.code, 'NEED_CONFIRM')
-  assert.equal(fs.existsSync(path.join(meta.paths.bucketA, meta.ids.alpha)), true)
+  assert.equal(res.status, 200)
+  assert.equal(fs.existsSync(path.join(meta.paths.bucketA, meta.ids.alpha)), false, '应当真的删掉')
 })
 
 test('HTTP：POST 正确确认后真的搬走并可还原', async () => {
@@ -196,7 +197,7 @@ test('HTTP：POST 正确确认后真的搬走并可还原', async () => {
     makeReq({
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-dsh-cleanup': '1' },
-      body: { ids: [meta.ids.beta], confirm: 'yes' },
+      body: { ids: [meta.ids.beta] },
     }),
     res,
   )
@@ -211,7 +212,7 @@ test('HTTP：POST 正确确认后真的搬走并可还原', async () => {
     makeReq({
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-dsh-cleanup': '1' },
-      body: { name, confirm: 'yes' },
+      body: { name },
     }),
     restoreRes,
   )
@@ -220,7 +221,7 @@ test('HTTP：POST 正确确认后真的搬走并可还原', async () => {
   assert.equal(fs.existsSync(path.join(meta.paths.bucketA, meta.ids.beta)), true)
 })
 
-test('HTTP：/set-lock 要自定义头 + confirm=yes；上锁后删不掉，解锁后可删', async () => {
+test('HTTP：/set-lock 要自定义头；上锁后删不掉，解锁后可删', async () => {
   const meta = buildFixture(path.join(CASES, 'host-lock'))
   const { ctx, routes } = makeCtx()
   apply(ctx, { dshHome: meta.dshHome, protectedSessionIds: [PROTECTED_ID] })
@@ -233,18 +234,12 @@ test('HTTP：/set-lock 要自定义头 + confirm=yes；上锁后删不掉，解�
 
   // 缺自定义头 → 403（CSRF 闸门）
   let res = makeRes()
-  await route.handler(post({ id: meta.ids.alpha, locked: true, confirm: 'yes' }, { 'x-dsh-cleanup': undefined }), res)
+  await route.handler(post({ id: meta.ids.alpha, locked: true }, { 'x-dsh-cleanup': undefined }), res)
   assert.equal(res.status, 403)
-
-  // 确认不是 yes → 400，锁名单没动
-  res = makeRes()
-  await route.handler(post({ id: meta.ids.alpha, locked: true, confirm: 'no' }), res)
-  assert.equal(res.status, 400)
-  assert.equal(JSON.parse(res.body).code, 'NEED_CONFIRM')
 
   // 上锁成功
   res = makeRes()
-  await route.handler(post({ id: meta.ids.alpha, locked: true, confirm: 'yes' }), res)
+  await route.handler(post({ id: meta.ids.alpha, locked: true }), res)
   assert.equal(res.status, 200)
   const locked = JSON.parse(res.body)
   assert.equal(locked.ok, true)
@@ -254,31 +249,27 @@ test('HTTP：/set-lock 要自定义头 + confirm=yes；上锁后删不掉，解�
   // 上锁的对话删不掉（请求成功但跳过，目录还在）
   const del = makeRes()
   await findRoute(routes, '/dsh-cleanup/api/delete-sessions').handler(
-    post({ ids: [meta.ids.alpha], confirm: 'yes' }),
+    post({ ids: [meta.ids.alpha] }),
     del,
   )
   assert.equal(del.status, 200)
   assert.equal(JSON.parse(del.body).code, 'NOTHING_TO_DO')
   assert.equal(fs.existsSync(path.join(meta.paths.bucketA, meta.ids.alpha)), true)
 
-  // 解锁同样要 yes
-  res = makeRes()
-  await route.handler(post({ id: meta.ids.alpha, locked: false, confirm: 'nope' }), res)
-  assert.equal(res.status, 400)
 
   // 解锁后可以删
   res = makeRes()
-  await route.handler(post({ id: meta.ids.alpha, locked: false, confirm: 'yes' }), res)
+  await route.handler(post({ id: meta.ids.alpha, locked: false }), res)
   assert.equal(res.status, 200)
   assert.deepEqual(JSON.parse(res.body).data.lockedSessionIds, [])
   const del2 = makeRes()
-  await findRoute(routes, '/dsh-cleanup/api/delete-sessions').handler(post({ ids: [meta.ids.alpha], confirm: 'yes' }), del2)
+  await findRoute(routes, '/dsh-cleanup/api/delete-sessions').handler(post({ ids: [meta.ids.alpha] }), del2)
   assert.equal(JSON.parse(del2.body).ok, true)
   assert.equal(fs.existsSync(path.join(meta.paths.bucketA, meta.ids.alpha)), false)
 
   // 内置保护的对话：面板不能加锁也不能解锁
   res = makeRes()
-  await route.handler(post({ id: PROTECTED_ID, locked: false, confirm: 'yes' }), res)
+  await route.handler(post({ id: PROTECTED_ID, locked: false }), res)
   assert.equal(res.status, 400)
   assert.equal(JSON.parse(res.body).code, 'PROTECTED_BASELINE')
 

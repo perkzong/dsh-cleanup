@@ -110,7 +110,6 @@ test('删除对话：归档 + 搬迁 + 清单；受保护会话被跳过', async
 
   const res = await service.deleteSessions(
     [meta.ids.alpha, meta.ids.beta, meta.ids.protected],
-    { confirmation: 'yes' },
   )
   assert.equal(res.ok, true)
   assert.equal(res.data.moved.length, 2)
@@ -139,7 +138,7 @@ test('删除对话：归档 + 搬迁 + 清单；受保护会话被跳过', async
   assert.equal(fs.readFileSync(path.join(meta.paths.storages, 'workspace.json'), 'utf8'), before)
 
   // 还原闭环
-  const restored = await service.restoreBackup(backupName, { confirmation: 'yes' })
+  const restored = await service.restoreBackup(backupName)
   assert.equal(restored.ok, true)
   assert.equal(restored.data.restored.length, 2)
   assert.equal(fs.existsSync(path.join(meta.paths.bucketA, meta.ids.alpha)), true)
@@ -147,18 +146,17 @@ test('删除对话：归档 + 搬迁 + 清单；受保护会话被跳过', async
   assert.equal(registry.archived.size, 0, '还原时应取消归档')
 })
 
-test('删除必须输入 yes，且拒绝时不产生新备份', async () => {
-  const registry = fakeRegistry()
-  const { meta, service } = makeCase('confirm', { registry })
-  const before = new Set(fs.existsSync(meta.paths.backups) ? fs.readdirSync(meta.paths.backups) : [])
-  await assert.rejects(
-    () => service.deleteSessions([meta.ids.alpha], { confirmation: 'no' }),
-    (e) => e instanceof CleanupRefusal && e.code === 'NEED_CONFIRM',
-  )
-  assert.equal(fs.existsSync(path.join(meta.paths.bucketA, meta.ids.alpha)), true)
-  const after = fs.readdirSync(meta.paths.backups)
-  assert.deepEqual(after.filter((x) => !before.has(x)), [], '拒绝时不应创建新备份目录')
-})
+test('删除不再需要确认：调用即执行并产生备份', async () => {
+    const registry = fakeRegistry()
+    const { meta, service } = makeCase('confirm', { registry })
+    const before = new Set(fs.existsSync(meta.paths.backups) ? fs.readdirSync(meta.paths.backups) : [])
+    // 2026-11-06 移除 yes 确认：不传任何确认参数，直接删除
+    const res = await service.deleteSessions([meta.ids.alpha])
+    assert.equal(res.ok, true)
+    assert.equal(fs.existsSync(path.join(meta.paths.bucketA, meta.ids.alpha)), false, '会话应被搬走')
+    const after = fs.readdirSync(meta.paths.backups)
+    assert.equal(after.filter((x) => !before.has(x)).length > 0, true, '执行后应创建备份目录')
+  })
 
 test('已归档的会话也能删除（不重复调用归档接口）', async () => {
   const calls = []
@@ -168,7 +166,7 @@ test('已归档的会话也能删除（不重复调用归档接口）', async ()
   }
   const { meta, service } = makeCase('already-archived', { registry })
   assert.equal(byId(await service.sessions(), meta.ids.gamma).archived, true)
-  const res = await service.deleteSessions([meta.ids.gamma], { confirmation: 'yes' })
+  const res = await service.deleteSessions([meta.ids.gamma])
   assert.equal(res.ok, true)
   assert.deepEqual(calls, [], '已在归档集合里时不应再调用 archiveSession')
   assert.equal(fs.existsSync(path.join(meta.paths.bucketB, meta.ids.gamma)), false)
@@ -179,7 +177,7 @@ test('最近还在写的会话被跳过（保护"正在用的那个"）', async 
   const log = fs.readdirSync(path.join(meta.paths.bucketA, meta.ids.beta))[0]
   fs.utimesSync(path.join(meta.paths.bucketA, meta.ids.beta, log), new Date(), new Date())
 
-  const res = await service.deleteSessions([meta.ids.beta], { confirmation: 'yes' })
+  const res = await service.deleteSessions([meta.ids.beta])
   assert.equal(res.ok, false)
   assert.equal(res.code, 'NOTHING_TO_DO')
   assert.equal(res.data.skipped[0].reason, 'RECENT')
@@ -194,7 +192,7 @@ test('归档被宿主拒绝时不搬目录', async () => {
   const broken = path.join(meta.paths.bucketA, 'session-archive-broken')
   fs.renameSync(dir, broken)
 
-  const res = await service.deleteSessions(['session-archive-broken'], { confirmation: 'yes' })
+  const res = await service.deleteSessions(['session-archive-broken'])
   assert.equal(res.ok, false)
   assert.equal(res.code, 'ALL_FAILED')
   assert.equal(res.data.failed[0].reason, 'ACTIVE')
@@ -204,7 +202,7 @@ test('归档被宿主拒绝时不搬目录', async () => {
 test('清孤儿：选 files/ 自动带上 file-objects 本体；新鲜文件跳过；tmp 不动', async () => {
   const { meta, service } = makeCase('clean-orphans')
   const rel = 'files/dd/' + DIGEST.orphanFile
-  const res = await service.cleanOrphans([rel], { confirmation: 'yes' })
+  const res = await service.cleanOrphans([rel])
   assert.equal(res.ok, true)
   assert.equal(res.data.moved.length, 2, 'files/ 与 file-objects 本体都要搬')
 
@@ -219,7 +217,7 @@ test('清孤儿：选 files/ 自动带上 file-objects 本体；新鲜文件跳�
   assert.match(fs.readFileSync(manifestPath, 'utf8'), /files\/dd\//)
 
   const backupName = path.basename(res.data.backupDir)
-  const restored = await service.restoreBackup(backupName, { confirmation: 'yes' })
+  const restored = await service.restoreBackup(backupName)
   assert.equal(restored.ok, true)
   assert.equal(fs.existsSync(meta.attachments.fileLink), true)
   assert.equal(fs.existsSync(meta.attachments.fileObj), true)
@@ -228,7 +226,7 @@ test('清孤儿：选 files/ 自动带上 file-objects 本体；新鲜文件跳�
 test('新鲜文件被单独选中时也会被跳过', async () => {
   const { meta, service } = makeCase('clean-fresh')
   const rel = 'objects/ab/' + DIGEST.freshObject
-  const res = await service.cleanOrphans([rel], { confirmation: 'yes' })
+  const res = await service.cleanOrphans([rel])
   assert.equal(res.ok, false)
   assert.equal(res.code, 'NOTHING_TO_DO')
   assert.equal(res.data.skipped[0].reason, 'FRESH')
@@ -239,7 +237,7 @@ test('没有语料时拒绝清理孤儿（不猜、不乱删）', async () => {
   const { meta, service } = makeCase('no-corpus', { emptyCorpus: true })
   void meta
   await assert.rejects(
-    () => service.cleanOrphans(['objects/aa/x'], { confirmation: 'yes' }),
+    () => service.cleanOrphans(['objects/aa/x']),
     (e) => e instanceof CleanupRefusal && e.code === 'NO_CORPUS',
   )
 })
@@ -247,34 +245,29 @@ test('没有语料时拒绝清理孤儿（不猜、不乱删）', async () => {
 test('非法路径与非法备份名被拒绝', async () => {
   const { service } = makeCase('traversal')
   // 清单里没有的路径一律当成"不是孤儿"，不会去拼路径
-  const traversal = await service.cleanOrphans(['../storages/workspace.json'], { confirmation: 'yes' })
+  const traversal = await service.cleanOrphans(['../storages/workspace.json'])
   assert.equal(traversal.ok, false)
   assert.equal(traversal.code, 'NOTHING_TO_DO')
   await assert.rejects(
-    () => service.restoreBackup('..', { confirmation: 'yes' }),
+    () => service.restoreBackup('..'),
     (e) => e instanceof CleanupRefusal && e.code === 'BAD_BACKUP_NAME',
   )
   await assert.rejects(
-    () => service.deleteBackups(['..\\..'], { confirmation: 'yes' }),
+    () => service.deleteBackups(['..\\..']),
     (e) => e instanceof CleanupRefusal && e.code === 'BAD_BACKUP_NAME',
   )
 })
 
-test('删除备份：必须 yes；只删备份，不碰会话', async () => {
-  const { meta, service } = makeCase('delete-backup')
-  const name = 'session-cleanup-2026-01-01T00-00-00'
-  await assert.rejects(
-    () => service.deleteBackups([name], { confirmation: 'no' }),
-    (e) => e instanceof CleanupRefusal && e.code === 'NEED_CONFIRM',
-  )
-  assert.equal(fs.existsSync(path.join(meta.paths.backups, name)), true)
-
-  const res = await service.deleteBackups([name], { confirmation: 'yes' })
-  assert.equal(res.ok, true)
-  assert.equal(res.data.removed.length, 1)
-  assert.equal(fs.existsSync(path.join(meta.paths.backups, name)), false)
-  assert.equal(fs.existsSync(path.join(meta.paths.bucketA, meta.ids.alpha)), true)
-})
+test('删除备份：不再需要确认；只删备份，不碰会话', async () => {
+    const { meta, service } = makeCase('delete-backup')
+    const name = 'session-cleanup-2026-01-01T00-00-00'
+    // 2026-11-06 移除 yes 确认：不传任何确认参数，直接删除
+    const res = await service.deleteBackups([name])
+    assert.equal(res.ok, true)
+    assert.equal(res.data.removed.length, 1)
+    assert.equal(fs.existsSync(path.join(meta.paths.backups, name)), false)
+    assert.equal(fs.existsSync(path.join(meta.paths.bucketA, meta.ids.alpha)), true)
+  })
 
 test('体检数字自洽', async () => {
   const { meta, service } = makeCase('health')
@@ -363,12 +356,11 @@ test('与 CLI --health 的数字对账（需要先跑 test/build-parity.js 和 C
 
 /* ---------------- 运行时锁名单（面板上锁 / 解锁，两个方向都要 yes） ---------------- */
 
-test('上锁：要 yes、要存在、落盘持久；上锁后删除会被跳过，解锁后恢复可删', async () => {
+test('上锁：不需确认、要存在、落盘持久；上锁后删除会被跳过，解锁后恢复可删', async () => {
   const { meta, service, paths } = makeCase('locks')
-  await assert.rejects(() => service.setLock(meta.ids.beta, true, { confirmation: 'no' }), (e) => e.code === 'NEED_CONFIRM')
-  await assert.rejects(() => service.setLock('session-nope-0000', true, { confirmation: 'yes' }), (e) => e.code === 'NOT_FOUND')
+  await assert.rejects(() => service.setLock('session-nope-0000', true), (e) => e.code === 'NOT_FOUND')
 
-  const res = await service.setLock(meta.ids.beta, true, { confirmation: 'yes' })
+  const res = await service.setLock(meta.ids.beta, true)
   assert.equal(res.ok, true)
   assert.deepEqual([...res.data.lockedSessionIds], [meta.ids.beta])
   assert.equal(fs.existsSync(paths.locksFile), true, '锁名单应当落盘')
@@ -380,17 +372,17 @@ test('上锁：要 yes、要存在、落盘持久；上锁后删除会被跳过�
   assert.deepEqual([...health.data.locks.ids], [meta.ids.beta])
 
   // 上锁后再删：被跳过，目录还在
-  const del = await service.deleteSessions([meta.ids.beta], { confirmation: 'yes' })
+  const del = await service.deleteSessions([meta.ids.beta])
   assert.equal(del.ok, false)
   assert.equal(del.code, 'NOTHING_TO_DO')
   assert.equal(del.data.skipped[0].reason, 'PROTECTED')
   assert.equal(fs.existsSync(path.join(meta.paths.bucketA, meta.ids.beta)), true)
 
   // 另一条路：cleanup_apply 的 Action 也一样被拦（同一条服务方法）
-  const off = await service.setLock(meta.ids.beta, false, { confirmation: 'yes' })
+  const off = await service.setLock(meta.ids.beta, false)
   assert.equal(off.ok, true)
   assert.deepEqual([...off.data.lockedSessionIds], [])
-  const del2 = await service.deleteSessions([meta.ids.beta], { confirmation: 'yes' })
+  const del2 = await service.deleteSessions([meta.ids.beta])
   assert.equal(del2.ok, true)
   assert.equal(fs.existsSync(path.join(meta.paths.bucketA, meta.ids.beta)), false)
 })
@@ -398,11 +390,11 @@ test('上锁：要 yes、要存在、落盘持久；上锁后删除会被跳过�
 test('解锁：内置保护名单不能上锁也不能解锁；锁文件坏了按"没锁"处理', async () => {
   const { meta, service, paths } = makeCase('locks-baseline')
   await assert.rejects(
-    () => service.setLock(PROTECTED_ID, true, { confirmation: 'yes' }),
+    () => service.setLock(PROTECTED_ID, true),
     (e) => e.code === 'PROTECTED_BASELINE',
   )
   await assert.rejects(
-    () => service.setLock(PROTECTED_ID, false, { confirmation: 'yes' }),
+    () => service.setLock(PROTECTED_ID, false),
     (e) => e.code === 'PROTECTED_BASELINE',
   )
 
@@ -414,7 +406,7 @@ test('解锁：内置保护名单不能上锁也不能解锁；锁文件坏了�
   assert.equal(res.data.items.every((s) => s.locked === false), true)
 
   // 坏文件会被下一次写覆盖
-  const fixed = await service.setLock(meta.ids.alpha, true, { confirmation: 'yes' })
+  const fixed = await service.setLock(meta.ids.alpha, true)
   assert.deepEqual([...fixed.data.lockedSessionIds], [meta.ids.alpha])
   assert.deepEqual([...createLockStore({ file: paths.locksFile }).list()], [meta.ids.alpha])
 })

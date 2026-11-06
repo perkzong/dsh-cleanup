@@ -193,7 +193,7 @@ function makeInspectTool(service) {
 }
 
 /**
- * 破坏性工具。confirm !== true 直接拒绝；即使 confirm=true，模型也必须先征得用户同意。
+ * 破坏性工具。2026-11-06 起不再要求 confirm 参数，调用即执行。
  * @param {object} service
  */
 function makeApplyTool(service) {
@@ -201,50 +201,42 @@ function makeApplyTool(service) {
     name: 'cleanup_apply',
     description:
       '破坏性操作：把数据移动到 DSH_HOME/backups（不是销毁），但会让对话从侧边栏消失、或让附件离开附件库。'
-      + '调用前必须先用 cleanup_inspect 拿到准确 id/路径，并用 ask_user_question 征得用户明确同意；'
-      + 'confirm 必须为 true。动作：delete_sessions（归档并搬走对话，ids 必填）；'
+      + '调用前必须先用 cleanup_inspect 拿到准确 id/路径，并用 ask_user_question 征得用户明确同意。'
+      + '动作：delete_sessions（归档并搬走对话，ids 必填）；'
       + 'clean_orphans（只处理明确列出的孤儿附件 relPaths，会连带同摘要的 file-objects 本体）；'
       + 'restore_backup（把某个备份搬回，name 必填）。没有“全选/全部”语义，禁止用它批量猜测。',
     parameters: {
       type: 'object',
       properties: {
         action: { type: 'string', enum: ['delete_sessions', 'clean_orphans', 'restore_backup'] },
-        confirm: { type: 'boolean', description: '用户已明确同意后传 true；否则拒绝执行' },
         ids: { type: 'array', items: { type: 'string' }, description: 'delete_sessions：要删除的对话 id' },
         relPaths: { type: 'array', items: { type: 'string' }, description: 'clean_orphans：相对 attachments/v1 的孤儿路径' },
         name: { type: 'string', description: 'restore_backup：备份目录名' },
       },
-      required: ['action', 'confirm'],
+      required: ['action'],
       additionalProperties: false,
     },
     output: { schema: { type: 'object' }, render: (_args, value) => renderToolText(value) },
     isConcurrencySafe: () => false,
     async execute(args) {
-      if (args.confirm !== true) {
-        return {
-          ok: false,
-          code: 'NEED_USER_APPROVAL',
-          message: 'confirm 不是 true，已拒绝执行。请先用 ask_user_question 征得用户明确同意。',
-        }
-      }
       try {
         if (args.action === 'delete_sessions') {
           if (!Array.isArray(args.ids) || !args.ids.length) {
             return { ok: false, code: 'NO_IDS', message: 'delete_sessions 需要 ids 数组，且不能为空。' }
           }
-          return await service.deleteSessions(args.ids, { confirmation: 'yes' })
+          return await service.deleteSessions(args.ids)
         }
         if (args.action === 'clean_orphans') {
           if (!Array.isArray(args.relPaths) || !args.relPaths.length) {
             return { ok: false, code: 'NO_PATHS', message: 'clean_orphans 需要 relPaths 数组，且不能为空。' }
           }
-          return await service.cleanOrphans(args.relPaths, { confirmation: 'yes' })
+          return await service.cleanOrphans(args.relPaths)
         }
         if (args.action === 'restore_backup') {
           if (typeof args.name !== 'string' || !args.name) {
             return { ok: false, code: 'NO_NAME', message: 'restore_backup 需要 name。' }
           }
-          return await service.restoreBackup(args.name, { confirmation: 'yes' })
+          return await service.restoreBackup(args.name)
         }
         return { ok: false, code: 'BAD_ACTION', message: '不认识的 action：' + args.action }
       } catch (e) {
@@ -336,12 +328,13 @@ export function apply(ctx, config) {
     routes.push(json('GET', '/sessions', () => service.sessions()))
     routes.push(json('GET', '/orphans', () => service.orphans()))
     routes.push(json('GET', '/backups', () => service.backups()))
-    routes.push(json('POST', '/delete-sessions', (body) => service.deleteSessions(body.ids, { confirmation: body.confirm })))
-    routes.push(json('POST', '/clean-orphans', (body) => service.cleanOrphans(body.paths, { confirmation: body.confirm })))
-    routes.push(json('POST', '/restore-backup', (body) => service.restoreBackup(body.name, { confirmation: body.confirm })))
-    routes.push(json('POST', '/delete-backups', (body) => service.deleteBackups(body.names, { confirmation: body.confirm })))
-    // 上锁 / 解锁：两个方向都要 confirm === 'yes'（走同一个 guardWrite 闸门）
-    routes.push(json('POST', '/set-lock', (body) => service.setLock(body.id, body.locked === true, { confirmation: body.confirm })))
+    // 2026-11-06：移除 yes 确认后，这些路由不再要求 body.confirm。
+    // 前端点击即执行，Host 侧只保留"改为移动而非销毁 / 跳过受保护项"这类硬约束。
+    routes.push(json('POST', '/delete-sessions', (body) => service.deleteSessions(body.ids)))
+    routes.push(json('POST', '/clean-orphans', (body) => service.cleanOrphans(body.paths)))
+    routes.push(json('POST', '/restore-backup', (body) => service.restoreBackup(body.name)))
+    routes.push(json('POST', '/delete-backups', (body) => service.deleteBackups(body.names)))
+    routes.push(json('POST', '/set-lock', (body) => service.setLock(body.id, body.locked === true)))
 
     scoped.effect(() => {
       const offs = routes.map((route) => scoped.webServer.register(route))

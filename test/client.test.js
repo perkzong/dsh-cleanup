@@ -265,9 +265,13 @@ test('中英词典键集合一致，且覆盖所有界面文案', () => {
     assert.ok(dicts.zh[key] && String(dicts.zh[key]).trim() !== '', '中文缺文案：' + key)
     assert.ok(dicts.en[key] && String(dicts.en[key]).trim() !== '', '英文缺文案：' + key)
   }
-  // 关键文案必须在
-  for (const key of ['nav', 'title', 'confirmInputLabel', 'deleteSelected', 'confirmDeleteBackupBody']) {
+  // 关键文案必须在（2026-11-06：确认框已移除，改用业务相关键）
+  for (const key of ['nav', 'title', 'deleteSelected', 'selectAll', 'selectNone', 'deleteBackupSelected']) {
     assert.ok(dicts.zh[key], '缺少关键键：' + key)
+  }
+  // 确认框专用键应当已随对话框一起移除
+  for (const key of ['confirmInputLabel', 'confirmPlaceholder', 'confirmDeleteTitle', 'confirmDeleteBody']) {
+    assert.equal(Object.hasOwn(dicts.zh, key), false, '确认框键应已移除：' + key)
   }
 })
 
@@ -280,7 +284,7 @@ test('client 源码没有引入宿主内部包、没有操作 document.body、�
   assert.deepEqual(colorLiterals, [], '不应出现写死的十六进制颜色')
 })
 
-test('上锁 / 解锁：词典齐全，且两个方向都走 yes 弹窗', () => {
+test('上锁 / 解锁：词典齐全，且两个方向都直接生效', () => {
   const def = loadModule()
   const mod = def.factory(() => reactStub())
   let dicts = null
@@ -289,21 +293,18 @@ test('上锁 / 解锁：词典齐全，且两个方向都走 yes 弹窗', () => 
     locale: { register(_ns, d) { dicts = d }, bind() { return (k) => k } },
     slots: { inject(_s, cb) { cb() }, register() { return () => {} } },
   })
-  for (const key of [
-    'colLock', 'lockAction', 'unlockAction', 'badgeBaseline', 'badgeLocked',
-    'confirmLockTitle', 'confirmLockBody', 'confirmLockHint', 'confirmLockAction',
-    'confirmUnlockTitle', 'confirmUnlockBody', 'confirmUnlockHint', 'confirmUnlockAction',
-  ]) {
+  for (const key of ['colLock', 'lockAction', 'unlockAction', 'badgeBaseline', 'badgeLocked']) {
     assert.ok(dicts.zh[key], '中文缺锁相关文案：' + key)
     assert.ok(dicts.en[key], '英文缺锁相关文案：' + key)
   }
-  // 文案里不能出现"一键解锁"这类暗示不需要确认的说法
-  assert.equal(/无需确认|no confirm/i.test(dicts.zh.confirmLockBody + dicts.zh.confirmUnlockBody), false)
 
-  // 两个 intent 都发到同一个 /set-lock，并且都带 confirm
-  assert.match(CODE, /postJson\('\/set-lock', \{ id: intent\.id, locked: /)
-  assert.match(CODE, /kind: locked \? 'lock-session' : 'unlock-session'/)
+  // 2026-11-06：确认框已移除，上锁 / 解锁点一下立即调 run()
+  assert.match(CODE, /run\(locked \? 'lock-session' : 'unlock-session'/, '上锁/解锁应直接调 run()')
+  assert.match(CODE, /postJson\('\/set-lock', \{ id: payload\.id, locked: /, '应打到 /set-lock')
+  assert.equal(/confirmation:/.test(CODE), false, '前端不应再传 confirmation')
+
   // 内置保护的对话在行里不给上锁/解锁按钮（只显示"永不删除"）
+  assert.match(CODE, /s\.protected\s*\?\s*h\('span'/)
   assert.match(CODE, /s\.protected\s*\?\s*h\('span'/)
 })
 
