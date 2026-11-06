@@ -248,12 +248,26 @@ test('非法路径与非法备份名被拒绝', async () => {
   const traversal = await service.cleanOrphans(['../storages/workspace.json'])
   assert.equal(traversal.ok, false)
   assert.equal(traversal.code, 'NOTHING_TO_DO')
+
+  // '..' 在哪个平台都是"上一级"，必须被 safeBackupDir 挡掉
   await assert.rejects(
     () => service.restoreBackup('..'),
     (e) => e instanceof CleanupRefusal && e.code === 'BAD_BACKUP_NAME',
   )
+
+  // 路径穿越要用各平台自己的分隔符构造：
+  // Windows 上 '..\\..' 是穿越，Linux 上反斜杠只是普通字符（那样它就是个不存在的
+  // 合法文件名，会报 NO_BACKUP 而不是 BAD_BACKUP_NAME）。用 path.sep 让两边都被
+  // 判成"含分隔符"，才是这条断言真正想验证的东西。
+  const traversalName = '..' + path.sep + '..'
   await assert.rejects(
-    () => service.deleteBackups(['..\\..']),
+    () => service.deleteBackups([traversalName]),
+    (e) => e instanceof CleanupRefusal && e.code === 'BAD_BACKUP_NAME',
+  )
+
+  // 绝对路径同样必须被拒（basename 之后会不等于原值）
+  await assert.rejects(
+    () => service.deleteBackups([path.resolve('/tmp')]),
     (e) => e instanceof CleanupRefusal && e.code === 'BAD_BACKUP_NAME',
   )
 })
