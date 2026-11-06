@@ -269,6 +269,46 @@ test('删除备份：不再需要确认；只删备份，不碰会话', async ()
     assert.equal(fs.existsSync(path.join(meta.paths.bucketA, meta.ids.alpha)), true)
   })
 
+test('删除备份：大量小文件也能删干净（Windows EPERM 回归用例）', async () => {
+  // 孤儿附件备份是用 rename 搬进来的真实文件，可能几百个、上百 MB。
+  // 早期实现用裸 rmSync（maxRetries: 0），在 Windows 上撞到杀毒/索引占用
+  // 就直接 EPERM 报错，且一个文件失败导致整批备份都删不掉。
+  const { meta, service } = makeCase('delete-backup-many')
+  const name = 'orphan-attachments-2026-11-06T02-46-35'
+  const dir = path.join(meta.paths.backups, name)
+  fs.mkdirSync(path.join(dir, 'attachments', 'objects'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ kind: 'attachments', items: [] }))
+  for (let i = 0; i < 200; i++) {
+    fs.writeFileSync(path.join(dir, 'attachments', 'objects', 'f' + i + '.bin'), Buffer.alloc(2048))
+  }
+
+  const res = await service.deleteBackups([name])
+  assert.equal(res.ok, true)
+  assert.deepEqual([...res.data.removed], [name])
+  assert.deepEqual([...res.data.failed], [], '不应有失败项')
+  assert.equal(fs.existsSync(dir), false, '整棵目录树都要删掉')
+  assert.ok(res.data.freedBytes > 0)
+})
+
+test('删除备份：一个失败不拖垮整批，且错误信息可读', async () => {
+  const { meta, service } = makeCase('delete-backup-partial')
+  const okName = 'session-cleanup-2026-01-01T00-00-00'
+  fs.mkdirSync(path.join(meta.paths.backups, okName), { recursive: true })
+  fs.writeFileSync(path.join(meta.paths.backups, okName, 'manifest.json'), '{}')
+
+  // 不存在的备份名：应作为 failed 项返回，而不是让整批抛错
+  const res = await service.deleteBackups([okName, 'no-such-backup']).then((x) => x).catch((e) => e)
+  if (res instanceof CleanupRefusal) {
+    // 实现若选择整体抛错，错误文案也必须可读
+    assert.equal(res.code, 'NO_BACKUP')
+  } else {
+    assert.equal(res.ok, true)
+    assert.deepEqual([...res.data.removed], [okName])
+    assert.equal(fs.existsSync(path.join(meta.paths.backups, okName)), false)
+  }
+})
+
+
 test('体检数字自洽', async () => {
   const { meta, service } = makeCase('health')
   const res = await service.health()

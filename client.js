@@ -869,6 +869,13 @@ window.__ModuleLoader__.load({
           notice.data && notice.data.skipped && notice.data.skipped.length
             ? h('div', { className: 'dshc-dim' }, t('skippedTitle') + '：' + notice.data.skipped.map((s) => s.reason).join(', '))
             : null,
+          // 批量删除里没能删掉的那几项（例如被占用），逐条给出原因，不让用户猜
+          notice.data && notice.data.failed && notice.data.failed.length
+            ? h('div', { className: 'dshc-warn' },
+              t('failedTitle') + '：',
+              notice.data.failed.map((f) => h('div', { key: f.name || f.relPath || String(f) }, '· ' + (f.name || f.relPath || '') + ' — ' + (f.message || '')))
+            )
+            : null,
           h('div', { className: 'dshc-actions' }, h(Button, { variant: 'link', onClick: () => setNotice(null) }, t('close'))),
         )
         : null
